@@ -1,213 +1,230 @@
-(function (factory) {
-	if (typeof define === 'function' && define.amd) {
-		define([], factory);
-	} else if (typeof module === 'object' && module.exports) {
-		module.exports = factory();
-	} else {
-		window.idleCallbackShim = factory();
-	}
-}(function(){
-	'use strict';
-	var scheduleStart, throttleDelay, lazytimer, lazyraf;
-	var root = typeof window != 'undefined' ?
-		window :
-		typeof global != undefined ?
-			global :
-			this || {};
-	var requestAnimationFrame = root.cancelRequestAnimationFrame && root.requestAnimationFrame || setTimeout;
-	var cancelRequestAnimationFrame = root.cancelRequestAnimationFrame || clearTimeout;
-	var tasks = [];
-	var runAttempts = 0;
-	var isRunning = false;
-	var remainingTime = 7;
-	var minThrottle = 35;
-	var throttle = 125;
-	var index = 0;
-	var taskStart = 0;
-	var tasklength = 0;
-	var IdleDeadline = {
-		get didTimeout(){
-			return false;
-		},
-		timeRemaining: function(){
-			var timeRemaining = remainingTime - (Date.now() - taskStart);
-			return timeRemaining < 0 ? 0 : timeRemaining;
-		},
-	};
-	var setInactive = debounce(function(){
-		remainingTime = 22;
-		throttle = 66;
-		minThrottle = 0;
-	});
+export default class DeferWork {
 
-	function debounce(fn){
-		var id, timestamp;
-		var wait = 99;
-		var check = function(){
-			var last = (Date.now()) - timestamp;
+  constructor() {
+		this.scheduleStart = undefined;
+	  this.throttleDelay = undefined;
+	  this.lazytimer = undefined;
+	  this.lazyraf = undefined;
+		this.tasks = [];
+	  this.runAttempts = 0;
+	  this.isRunning = false;
+	  this.remainingTime = 7;
+	  this.minThrottle = 35;
+	  this.throttle = 125;
+	  this.index = 0;
+	  this.taskStart = 0;
+	  this.tasklength = 0;
 
-			if (last < wait) {
-				id = setTimeout(check, wait - last);
-			} else {
-				id = null;
-				fn();
-			}
-		};
-		return function(){
-			timestamp = Date.now();
-			if(!id){
-				id = setTimeout(check, wait);
-			}
-		};
-	}
+		this.root = typeof window != 'undefined' ?
+	    window :
+	    typeof global !== undefined ?
+	    global :
+	    this || {};
 
-	function abortRunning(){
-		if(isRunning){
-			if(lazyraf){
-				cancelRequestAnimationFrame(lazyraf);
-			}
-			if(lazytimer){
-				clearTimeout(lazytimer);
-			}
-			isRunning = false;
-		}
-	}
+	  this.IdleDeadline = {
+	    get didTimeout() {
+	      return false;
+	    },
+	    timeRemaining: () => {
+	      const timeRemaining = this.remainingTime - (Date.now() - this.taskStart);
+	      return timeRemaining < 0 ? 0 : timeRemaining;
+	    },
+	  };
 
-	function onInputorMutation(){
-		if(throttle != 125){
-			remainingTime = 7;
-			throttle = 125;
-			minThrottle = 35;
+		this.setInactive = this.debounce(() => {
+	    this.remainingTime = 22;
+	    this.throttle = 66;
+	    this.minThrottle = 0;
+	  });
 
-			if(isRunning) {
-				abortRunning();
-				scheduleLazy();
-			}
-		}
-		setInactive();
-	}
+    if (!this.root.requestIdleCallback || !this.root.cancelIdleCallback) {
+      this.bootShim();
+    } else {
+      this.bootNative();
+    }
+  }
 
-	function scheduleAfterRaf() {
-		lazyraf = null;
-		lazytimer = setTimeout(runTasks, 0);
-	}
+  debounce = fn => {
+    let id, timestamp;
+    const wait = 99;
+    const check = () => {
+      const last = Date.now() - timestamp;
 
-	function scheduleRaf(){
-		lazytimer = null;
-		requestAnimationFrame(scheduleAfterRaf);
-	}
+      if (last < wait) {
+        id = window.setTimeout(check, wait - last);
+      } else {
+        id = null;
+        fn();
+      }
+    }
 
-	function scheduleLazy(){
+    return () => {
+      timestamp = Date.now();
+      if (!id) {
+        id = window.setTimeout(check, wait);
+      }
+    };
+  }
 
-		if(isRunning){return;}
-		throttleDelay = throttle - (Date.now() - taskStart);
+  abortRunning = () => {
+    if (this.isRunning) {
+      if (this.lazyraf) {
+        window.cancelAnimationFrame(this.lazyraf);
+      }
+      if (this.lazytimer) {
+        clearTimeout(this.lazytimer);
+      }
+      this.isRunning = false;
+    }
+  }
 
-		scheduleStart = Date.now();
+  onInputorMutation = () => {
+    if (this.throttle != 125) {
+      this.remainingTime = 7;
+      this.throttle = 125;
+      this.minThrottle = 35;
 
-		isRunning = true;
+      if (this.isRunning) {
+        this.abortRunning();
+        this.scheduleLazy();
+      }
+    }
+    this.setInactive();
+  }
 
-		if(minThrottle && throttleDelay < minThrottle){
-			throttleDelay = minThrottle;
-		}
+  scheduleAfterRaf = () => {
+    this.lazyraf = null;
+    this.lazytimer = window.setTimeout(this.runTasks, 0);
+  }
 
-		if(throttleDelay > 9){
-			lazytimer = setTimeout(scheduleRaf, throttleDelay);
-		} else {
-			throttleDelay = 0;
-			scheduleRaf();
-		}
-	}
+  scheduleRaf = () => {
+    this.lazytimer = null;
+    window.requestAnimationFrame(this.scheduleAfterRaf);
+  }
 
-	function runTasks(){
-		var task, i, len;
-		var timeThreshold = remainingTime > 9 ?
-			9 :
-			1
-		;
+  scheduleLazy = () => {
 
-		taskStart = Date.now();
-		isRunning = false;
+    if (this.isRunning) {
+      return;
+    }
+    const now = Date.now();
+    this.throttleDelay = this.throttle - (now - this.taskStart);
 
-		lazytimer = null;
+    this.scheduleStart = now;
 
-		if(runAttempts > 2 || taskStart - throttleDelay - 50 < scheduleStart){
-			for(i = 0, len = tasks.length; i < len && IdleDeadline.timeRemaining() > timeThreshold; i++){
-				task = tasks.shift();
-				tasklength++;
-				if(task){
-					task(IdleDeadline);
-				}
-			}
-		}
+    this.isRunning = true;
 
-		if(tasks.length){
-			scheduleLazy();
-		} else {
-			runAttempts = 0;
-		}
-	}
+    if (this.minThrottle && this.throttleDelay < this.minThrottle) {
+      this.throttleDelay = this.minThrottle;
+    }
 
-	function requestIdleCallbackShim(task){
-		index++;
-		tasks.push(task);
-		scheduleLazy();
-		return index;
-	}
+    if (this.throttleDelay > 9) {
+      this.lazytimer = window.setTimeout(this.scheduleRaf, this.throttleDelay);
+    } else {
+      this.throttleDelay = 0;
+      this.scheduleRaf();
+    }
+  }
 
-	function cancelIdleCallbackShim(id){
-		var index = id - 1 - tasklength;
-		if(tasks[index]){
-			tasks[index] = null;
-		}
-	}
+  runTasks = () => {
+    let task, i;
+    const timeThreshold = this.remainingTime > 9 ? 9 : 1;
+		const remainingTasks = this.tasks.length;
 
-	if(!root.requestIdleCallback || !root.cancelIdleCallback){
-		root.requestIdleCallback = requestIdleCallbackShim;
-		root.cancelIdleCallback = cancelIdleCallbackShim;
+    this.taskStart = Date.now();
+    this.isRunning = false;
+    this.lazytimer = null;
 
-		if(root.document && document.addEventListener){
-			root.addEventListener('scroll', onInputorMutation, true);
-			root.addEventListener('resize', onInputorMutation);
+    if (++this.runAttempts > 2 || this.taskStart - this.throttleDelay - 50 < this.scheduleStart) {
+			for (i = 0; i < remainingTasks && this.IdleDeadline.timeRemaining() > timeThreshold; i++) {
+        task = this.tasks.shift();
+        this.tasklength++;
+        if (task) {
+          task(this.IdleDeadline);
+        }
+      }
+    }
 
-			document.addEventListener('focus', onInputorMutation, true);
-			document.addEventListener('mouseover', onInputorMutation, true);
-			['click', 'keypress', 'touchstart', 'mousedown'].forEach(function(name){
-				document.addEventListener(name, onInputorMutation, {capture: true, passive: true});
-			});
+    if (remainingTasks) {
+			this.scheduleLazy();
+    } else {
+			this.runAttempts = 0;
+    }
+  }
 
-			if(root.MutationObserver){
-				new MutationObserver( onInputorMutation ).observe( document.documentElement, {childList: true, subtree: true, attributes: true} );
-			}
-		}
-	} else {
-		try{
-			root.requestIdleCallback(function(){}, {timeout: 0});
-		} catch(e){
-			(function(rIC){
-				var timeRemainingProto, timeRemaining;
-				root.requestIdleCallback = function(fn, timeout){
-					if(timeout && typeof timeout.timeout == 'number'){
-						return rIC(fn, timeout.timeout);
-					}
-					return rIC(fn);
-				};
-				if(root.IdleCallbackDeadline && (timeRemainingProto = IdleCallbackDeadline.prototype)){
-					timeRemaining = Object.getOwnPropertyDescriptor(timeRemainingProto, 'timeRemaining');
-					if(!timeRemaining || !timeRemaining.configurable || !timeRemaining.get){return;}
-					Object.defineProperty(timeRemainingProto, 'timeRemaining', {
-						value:  function(){
-							return timeRemaining.get.call(this);
-						},
-						enumerable: true,
-						configurable: true,
-					});
-				}
-			})(root.requestIdleCallback)
-		}
-	}
+  requestIdleCallbackShim = task => {
+    this.index++;
+    this.tasks.push(task);
+    this.scheduleLazy();
+    return this.index;
+  }
 
-	return {
-		request: requestIdleCallbackShim,
-		cancel: cancelIdleCallbackShim,
-	};
-}));
+  cancelIdleCallbackShim = id => {
+    const index = id - 1 - this.tasklength;
+    if (this.tasks[index]) {
+      this.tasks[index] = null;
+    }
+  }
+
+  bootShim = () => {
+    this.requestIdleCallback = this.requestIdleCallbackShim;
+    this.cancelIdleCallback = this.cancelIdleCallbackShim;
+
+    if (this.root.document && document.addEventListener) {
+      this.root.addEventListener('scroll', this.onInputorMutation, true);
+      this.root.addEventListener('resize', this.onInputorMutation);
+
+      document.addEventListener('focus', this.onInputorMutation, true);
+      document.addEventListener('mouseover', this.onInputorMutation, true);
+      ['click', 'keypress', 'touchstart', 'mousedown'].forEach(function(name) {
+        document.addEventListener(name, this.onInputorMutation, {
+          capture: true,
+          passive: true
+        });
+      });
+
+      if (this.root.MutationObserver) {
+        new MutationObserver(this.onInputorMutation).observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true
+        });
+      }
+    }
+  }
+
+  bootNative = () => {
+    try {
+      this.requestIdleCallback = window.requestIdleCallback;
+      this.requestIdleCallback(() => {}, {
+        timeout: 0
+      });
+    } catch (e) {
+      (root => {
+        let timeRemainingProto, timeRemaining;
+        this.requestIdleCallback = (fn, timeout) => {
+          if (timeout && typeof timeout.timeout == 'number') {
+            return root.requestIdleCallback(fn, timeout.timeout);
+          }
+          return root.requestIdleCallback(fn);
+        };
+
+        if (root.IdleCallbackDeadline && (timeRemainingProto = root.IdleCallbackDeadline.prototype)) {
+          timeRemaining = Object.getOwnPropertyDescriptor(timeRemainingProto, 'timeRemaining');
+
+          if (!timeRemaining || !timeRemaining.configurable || !timeRemaining.get) {
+            return;
+          }
+
+          Object.defineProperty(timeRemainingProto, 'timeRemaining', {
+            value: function() {
+              return timeRemaining.get.call(this);
+            },
+            enumerable: true,
+            configurable: true,
+          });
+        }
+      })(this.root)
+    }
+  }
+}
